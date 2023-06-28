@@ -1,6 +1,10 @@
+# Julia code with C function calls
+
+# Load the necessary packages
 using Chemfiles
 using ProgressBars
 
+# Function to calculate distance matrix
 function calculate_distance_matrix!(distance_matrix::Matrix{Float64}, frame::Frame)::Matrix{Float64}
     n_atoms = size(distance_matrix, 1)
 
@@ -15,28 +19,18 @@ function calculate_distance_matrix!(distance_matrix::Matrix{Float64}, frame::Fra
     return distance_matrix
 end
 
-
-function distance_cutoff(distance::Float64, rcutoff::Float64=6.0)::Float64
-    if distance > rcutoff
-        return 0.0
-    else
-        return 0.5 * (cos(π * distance / rcutoff) + 1.0)
-    end
-end
-
-function compute_g2_element(distance::Float64, eta::Float64, rcutoff::Float64, rshift::Float64)::Float64
-    if distance > 0.0
-        return exp(-eta * (distance - rshift)^2) * distance_cutoff(distance, rcutoff)
-    else
-        return 0.0
-    end
-end
-
+# Function to compute g2 matrix element
 function compute_g2(distances::Vector{Float64}, eta::Float64, rcutoff::Float64, rshift::Float64)::Float64
-    return sum(compute_g2_element(d, eta, rcutoff, rshift) for d in distances)
+    result = 0.0
+    for d in distances
+        result += @ccall "./g2.so".compute_g2_element(d::Cdouble, eta::Cdouble, rcutoff::Cdouble, rshift::Cdouble)::Cdouble
+        # result += compute_g2_element(d, eta, rcutoff, rshift)
+    end
+    return result
 end
 
 
+# Function to build g2 matrix
 function build_g2_matrix(distance_matrix::Matrix{Float64}, eta, rcutoff, rshift)
     N = size(distance_matrix, 1)
     g2_matrix = zeros(Float64, N)
@@ -49,6 +43,7 @@ function build_g2_matrix(distance_matrix::Matrix{Float64}, eta, rcutoff, rshift)
     return g2_matrix
 end
 
+# Function to compute mean g2
 function compute_mean_g2(trajectory, eta, rcutoff, rshift, n_atoms)
     distance_matrix = zeros(Float64, n_atoms, n_atoms)
 
@@ -62,6 +57,7 @@ function compute_mean_g2(trajectory, eta, rcutoff, rshift, n_atoms)
     return mean_g2_value
 end
 
+# Main function
 function main()
     filename = "100CH3OH-CG-200.xtc"
     trajectory = Trajectory(filename)
@@ -83,7 +79,7 @@ function main()
         end
     end
 
-    output_file = "julia-g2_values.txt"
+    output_file = "julia-ccall-g2_values.txt"
     f = open(output_file, "w")
 
     for row in eachrow(g2_values_matrix)
